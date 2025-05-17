@@ -5,6 +5,7 @@ import requests
 from bs4 import BeautifulSoup, Tag
 import os
 from dotenv import load_dotenv
+from db import Session, CarModel, init_db
 
 load_dotenv()
 BASE_URL = os.getenv("BASE_URL")
@@ -17,7 +18,6 @@ class Car:
     price_usd: int
     odometer: int
     username: str
-    phone_number: int
     image_url: str
     image_count: int
     car_number: str
@@ -29,7 +29,6 @@ def parse_single_car(car: Tag) -> Car:
     url = car.select_one(".m-link-ticket")["href"]
     title = car.select_one(".blue.bold").text.strip()
     price_usd = int(car.select_one("div.price-ticket")["data-main-price"])
-    #скоріш за все так робити не правильно але я не придумав інакше(
     try:
         odometer = int(''.join(filter(str.isdigit, car.select_one("li.item-char.js-race").text.split("тис")[0]))) * 1000
     except Exception:
@@ -40,13 +39,11 @@ def parse_single_car(car: Tag) -> Car:
     username_tag = soup.select_one("div.seller_info_name")
     username = username_tag.get_text(strip=True) if username_tag else None
 
-    #phone number(((
-
     image_tag = soup.select_one(".carousel-inner img")
     image_url = image_tag["src"] if image_tag else None
 
     all_images = soup.select(".carousel-inner img")
-    image_count = len(all_images) - 1
+    image_count = len(all_images)
 
     vin_tag = soup.select_one("span.label-vin")
     car_vin = vin_tag.get_text(strip=True) if vin_tag else None
@@ -56,7 +53,7 @@ def parse_single_car(car: Tag) -> Car:
 
     found_at = datetime.datetime.now()
 
-    print(dict(
+    return Car(
         url=url,
         title=title,
         price_usd=price_usd,
@@ -67,11 +64,10 @@ def parse_single_car(car: Tag) -> Car:
         car_number=car_number,
         car_vin=car_vin,
         datetime_found=found_at
-    ))
+    )
 
 
 def get_home_cars() -> [Car]:
-    all_cars = []
     page = 1
 
     while True:
@@ -86,14 +82,28 @@ def get_home_cars() -> [Car]:
 
         for car_card in car_cards:
             car = parse_single_car(car_card)
-            all_cars.append(car)
-
+            with Session() as session:
+                exists = session.query(CarModel).filter_by(url=car.url).first()
+                if not exists:
+                    db_car = CarModel(
+                        url=car.url,
+                        title=car.title,
+                        price_usd=car.price_usd,
+                        odometer=car.odometer,
+                        username=car.username,
+                        image_url=car.image_url,
+                        image_count=car.image_count,
+                        car_number=car.car_number,
+                        car_vin=car.car_vin,
+                        datetime_found=car.datetime_found,
+                    )
+                    session.add(db_car)
+                    session.commit()
         page += 1
-
-    return all_cars
 
 
 def main():
+    init_db()
     get_home_cars()
 
 
