@@ -1,6 +1,9 @@
 import dataclasses
 import datetime
 
+import logging
+import sys
+
 import requests
 from bs4 import BeautifulSoup, Tag
 import os
@@ -23,6 +26,16 @@ class Car:
     car_number: str
     car_vin: str
     datetime_found: datetime
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(levelname)8s]: %(message)s",
+    handlers=[
+        logging.FileHandler("parser.log"),
+        logging.StreamHandler(sys.stdout),
+    ]
+)
 
 
 def parse_single_car(car: Tag) -> Car:
@@ -71,6 +84,7 @@ def get_home_cars() -> [Car]:
     page = 1
 
     while True:
+        logging.info(f"Start parsing for page {page}")
         url = f"{BASE_URL}?page={page}"
 
         response = requests.get(url)
@@ -78,12 +92,14 @@ def get_home_cars() -> [Car]:
 
         car_cards = soup.select(".content-bar")
         if not car_cards:
+            logging.info("No cars found, stop parsing")
             break
 
         for car_card in car_cards:
             car = parse_single_car(car_card)
             with Session() as session:
                 exists = session.query(CarModel).filter_by(url=car.url).first()
+                logging.info(f"Car {car.url} already exists, skipping")
                 if not exists:
                     db_car = CarModel(
                         url=car.url,
@@ -103,8 +119,11 @@ def get_home_cars() -> [Car]:
 
 
 def main():
+    logging.info("Initializing DB...")
     init_db()
+    logging.info("Start parser...")
     get_home_cars()
+    logging.info("Finished.")
 
 
 if __name__ == '__main__':
